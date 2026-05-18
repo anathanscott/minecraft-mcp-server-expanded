@@ -68,11 +68,15 @@ export class BotConnection {
     bot.once('spawn', async () => {
       this.state = 'connected';
       this.callbacks.onLog('info', 'Bot spawned in world');
-
+    
       const mcData = minecraftData(bot.version);
       const defaultMove = new Movements(bot, mcData);
       bot.pathfinder.setMovements(defaultMove);
-
+    
+      // Load pvp plugin after spawn
+      const pvpPkg = await import('mineflayer-pvp');
+      bot.loadPlugin(pvpPkg.plugin);
+    
       bot.chat('LLM-powered bot ready to receive instructions!');
       this.callbacks.onLog('info', `Bot connected successfully. Username: ${this.config.username}, Server: ${this.config.host}:${this.config.port}`);
     });
