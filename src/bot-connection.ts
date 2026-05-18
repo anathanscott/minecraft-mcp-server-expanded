@@ -76,7 +76,8 @@ export class BotConnection {
       // Load pvp plugin after spawn
       const pvpPkg = await import('mineflayer-pvp');
       bot.loadPlugin(pvpPkg.plugin);
-    
+
+      bot.chat('/skin url "https://raw.githubusercontent.com/anathanscott/minecraft-mcp-server-expanded/main/caleb-skin.png"');
       bot.chat('LLM-powered bot ready to receive instructions!');
       this.callbacks.onLog('info', `Bot connected successfully. Username: ${this.config.username}, Server: ${this.config.host}:${this.config.port}`);
     });
