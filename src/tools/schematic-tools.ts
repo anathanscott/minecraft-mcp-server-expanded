@@ -1,12 +1,13 @@
 import { z } from "zod";
 import type { Bot } from 'mineflayer';
 import { ToolFactory } from '../tool-factory.js';
-import { goals } from 'mineflayer-pathfinder';
+import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
+const { goals } = pathfinderPkg;
 const { GoalNear } = goals;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMATICS_DIR = path.resolve(__dirname, '../../schematics');
