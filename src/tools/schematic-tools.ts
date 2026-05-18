@@ -1,12 +1,13 @@
 import { z } from "zod";
 import type { Bot } from 'mineflayer';
 import { ToolFactory } from '../tool-factory.js';
-import { Schematic } from 'prismarine-schematic';
+import { goals } from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
+const { GoalNear } = goals;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMATICS_DIR = path.resolve(__dirname, '../../schematics');
 
@@ -45,13 +46,13 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
   // ── BUILD SCHEMATIC ────────────────────────────────────────────────────────
   factory.registerTool(
     "build-schematic",
-    "Build a structure from a schematic file, placing blocks one by one starting at CALEB's current position. CALEB must have the required blocks in inventory (or be in creative mode). Large structures will take time — CALEB will report progress.",
+    "Build a structure from a schematic file, placing blocks one by one starting at CALEB's current position. CALEB must have the required blocks in inventory (or be in creative mode). Large structures will take time — CALEB will report progress in Minecraft chat.",
     {
       filename: z.string().describe("Exact filename of the schematic to build, including extension (e.g. 'smallhouse.schem')"),
       offsetX: z.coerce.number().finite().optional().describe("X offset from CALEB's position to start building (default: 0)"),
       offsetY: z.coerce.number().finite().optional().describe("Y offset — use 0 to build at current level (default: 0)"),
       offsetZ: z.coerce.number().finite().optional().describe("Z offset from CALEB's position to start building (default: 0)"),
-      delayMs: z.coerce.number().finite().optional().describe("Delay in milliseconds between placing each block. Lower is faster (default: 250)")
+      delayMs: z.coerce.number().finite().optional().describe("Milliseconds between placing each block — lower is faster (default: 250)")
     },
     async ({ filename, offsetX = 0, offsetY = 0, offsetZ = 0, delayMs = 250 }) => {
       const bot = getBot();
@@ -71,7 +72,10 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
         return factory.createResponse("File must be a .schem or .schematic file.");
       }
 
-      let schematic: Schematic;
+      // Dynamic import to avoid ES module issues
+      const { Schematic } = await import('prismarine-schematic');
+
+      let schematic: InstanceType<typeof Schematic>;
       try {
         const buffer = fs.readFileSync(filePath);
         schematic = await Schematic.read(buffer);
@@ -82,29 +86,9 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
       const origin = bot.entity.position.floored().offset(offsetX, offsetY, offsetZ);
       const size = schematic.size;
 
-      // Count total blocks to place (skip air)
-      let totalBlocks = 0;
-      schematic.forEach((block) => {
-        if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'void_air') {
-          totalBlocks++;
-        }
-      });
-
-      if (totalBlocks === 0) {
-        return factory.createResponse("Schematic appears to be empty or contains only air blocks.");
-      }
-
-      // Announce start
-      await bot.chat(`Starting build: ${safeName} (${totalBlocks} blocks, ${size.x}x${size.y}x${size.z})`);
-
-      let placed = 0;
-      let failed = 0;
-      const errors: string[] = [];
-
-      // Place blocks — bottom to top so we don't block ourselves
+      // Collect all non-air blocks first
       const blockList: { pos: Vec3; name: string }[] = [];
-
-      schematic.forEach((block, pos) => {
+      schematic.forEach((block: { name: string } | null, pos: Vec3) => {
         if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'void_air') {
           blockList.push({
             pos: new Vec3(
@@ -117,30 +101,38 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
         }
       });
 
+      if (blockList.length === 0) {
+        return factory.createResponse("Schematic appears to be empty or contains only air blocks.");
+      }
+
       // Sort bottom-up so scaffolding works naturally
       blockList.sort((a, b) => a.pos.y - b.pos.y);
 
+      const totalBlocks = blockList.length;
+      await bot.chat(`Starting build: ${safeName} (${totalBlocks} blocks, ${size.x}x${size.y}x${size.z})`);
+
+      let placed = 0;
+      let failed = 0;
+      const missingMaterials = new Set<string>();
+
       for (const { pos, name } of blockList) {
         try {
-          // Find the block in inventory
           const item = bot.inventory.items().find(i => i.name === name);
           if (!item) {
             failed++;
-            if (errors.length < 5) {
-              errors.push(`Missing: ${name}`);
-            }
+            missingMaterials.add(name);
             continue;
           }
 
           await bot.equip(item, 'hand');
 
-          // Move near the target position if too far
+          // Move near if too far
           const dist = bot.entity.position.distanceTo(pos);
           if (dist > 4) {
-            await bot.pathfinder.goto(new (require('mineflayer-pathfinder').goals.GoalNear)(pos.x, pos.y, pos.z, 3));
+            await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 3));
           }
 
-          // Place the block
+          // Place against the block below
           const referenceBlock = bot.blockAt(pos.offset(0, -1, 0));
           if (referenceBlock) {
             await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
@@ -150,11 +142,10 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
           }
 
           // Progress report every 25 blocks
-          if (placed % 25 === 0) {
+          if (placed > 0 && placed % 25 === 0) {
             await bot.chat(`Building... ${placed}/${totalBlocks} blocks placed`);
           }
 
-          // Respect delay
           await new Promise(resolve => setTimeout(resolve, delayMs));
 
         } catch {
@@ -162,9 +153,10 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
         }
       }
 
-      const summary = `Build complete: ${placed}/${totalBlocks} blocks placed` +
-        (failed > 0 ? `, ${failed} failed` : '') +
-        (errors.length > 0 ? `\nMissing materials: ${errors.join(', ')}` : '');
+      const missing = missingMaterials.size > 0
+        ? `\nMissing materials: ${[...missingMaterials].join(', ')}`
+        : '';
+      const summary = `Build complete: ${placed}/${totalBlocks} blocks placed${failed > 0 ? `, ${failed} failed` : ''}${missing}`;
 
       await bot.chat(summary);
       return factory.createResponse(summary);
