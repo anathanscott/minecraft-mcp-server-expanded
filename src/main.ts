@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { setupStdioFiltering } from './stdio-filter.js';
@@ -17,6 +16,8 @@ import { registerFlightTools } from './tools/flight-tools.js';
 import { registerGameStateTools } from './tools/gamestate-tools.js';
 import { registerCraftingTools } from './tools/crafting-tools.js';
 import { registerFurnaceTools } from './tools/furnace-tools.js';
+import { registerAutonomousTools } from './tools/autonomous-tools.js';
+import { registerSchematicTools } from './tools/schematic-tools.js';
 
 setupStdioFiltering();
 
@@ -31,7 +32,6 @@ process.on('uncaughtException', (error) => {
 async function main() {
   const config = parseConfig();
   const messageStore = new MessageStore();
-
   const connection = new BotConnection(
     config,
     {
@@ -59,6 +59,8 @@ async function main() {
   registerGameStateTools(factory, getBot);
   registerCraftingTools(factory, getBot);
   registerFurnaceTools(factory, getBot);
+  registerAutonomousTools(factory, getBot);
+  registerSchematicTools(factory, getBot);
 
   process.stdin.on('end', () => {
     connection.cleanup();
