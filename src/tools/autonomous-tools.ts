@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { Bot } from 'mineflayer';
 import { ToolFactory } from '../tool-factory.js';
-import { goals, Movements } from 'mineflayer-pathfinder';
+import pathfinderPkg from 'mineflayer-pathfinder';
+const { goals, Movements } = pathfinderPkg;
 import minecraftData from 'minecraft-data';
 
 const { GoalFollow, GoalNear } = goals;
