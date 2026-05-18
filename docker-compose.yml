@@ -1,0 +1,12 @@
+services:
+  caleb-minecraft-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: caleb-minecraft-mcp
+    restart: unless-stopped
+    ports:
+      - "8201:8201"
+    volumes:
+      - /home/bazzite/caleb-minecraft/config:/app/config
+    command: --port 8201 --config /app/config/config.json
