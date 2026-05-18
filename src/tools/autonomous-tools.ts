@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Bot } from 'mineflayer';
 import { ToolFactory } from '../tool-factory.js';
 import { goals, Movements } from 'mineflayer-pathfinder';
+import minecraftData from 'minecraft-data';
 
 const { GoalFollow, GoalNear } = goals;
 
@@ -44,7 +45,8 @@ export function registerAutonomousTools(factory: ToolFactory, getBot: () => Bot)
       // Cancel any existing follow
       clearFollow(bot);
 
-      const movements = new Movements(bot);
+      const mcData = minecraftData(bot.version);
+      const movements = new Movements(bot, mcData);
       bot.pathfinder.setMovements(movements);
 
       const target = bot.players[username]?.entity;
