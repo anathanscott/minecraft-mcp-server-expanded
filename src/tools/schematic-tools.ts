@@ -58,7 +58,6 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
       const bot = getBot();
       ensureSchematicsDir();
 
-      // Safety: strip any path traversal attempts
       const safeName = path.basename(filename);
       const filePath = path.join(SCHEMATICS_DIR, safeName);
 
@@ -72,10 +71,10 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
         return factory.createResponse("File must be a .schem or .schematic file.");
       }
 
-      // Dynamic import to avoid ES module issues
       const { Schematic } = await import('prismarine-schematic');
 
-      let schematic: InstanceType<typeof Schematic>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let schematic: any;
       try {
         const buffer = fs.readFileSync(filePath);
         schematic = await Schematic.read(buffer);
@@ -84,30 +83,35 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
       }
 
       const origin = bot.entity.position.floored().offset(offsetX, offsetY, offsetZ);
-      const size = schematic.size;
+      const size = schematic.size as Vec3;
 
-      // Collect all non-air blocks first
+      // Iterate using x/y/z loops and getBlock() — the correct API
       const blockList: { pos: Vec3; name: string }[] = [];
-      schematic.forEach((block: { name: string } | null, pos: Vec3) => {
-        if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'void_air') {
-          blockList.push({
-            pos: new Vec3(
-              origin.x + pos.x,
-              origin.y + pos.y,
-              origin.z + pos.z
-            ),
-            name: block.name
-          });
+
+      for (let y = 0; y < size.y; y++) {
+        for (let z = 0; z < size.z; z++) {
+          for (let x = 0; x < size.x; x++) {
+            const localPos = new Vec3(x, y, z);
+            const block = schematic.getBlock(localPos);
+            if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'void_air') {
+              blockList.push({
+                pos: new Vec3(
+                  origin.x + x,
+                  origin.y + y,
+                  origin.z + z
+                ),
+                name: block.name
+              });
+            }
+          }
         }
-      });
+      }
 
       if (blockList.length === 0) {
         return factory.createResponse("Schematic appears to be empty or contains only air blocks.");
       }
 
-      // Sort bottom-up so scaffolding works naturally
-      blockList.sort((a, b) => a.pos.y - b.pos.y);
-
+      // Already sorted bottom-up by the y loop
       const totalBlocks = blockList.length;
       await bot.chat(`Starting build: ${safeName} (${totalBlocks} blocks, ${size.x}x${size.y}x${size.z})`);
 
@@ -126,13 +130,11 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
 
           await bot.equip(item, 'hand');
 
-          // Move near if too far
           const dist = bot.entity.position.distanceTo(pos);
           if (dist > 4) {
             await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 3));
           }
 
-          // Place against the block below
           const referenceBlock = bot.blockAt(pos.offset(0, -1, 0));
           if (referenceBlock) {
             await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
@@ -141,7 +143,6 @@ export function registerSchematicTools(factory: ToolFactory, getBot: () => Bot):
             failed++;
           }
 
-          // Progress report every 25 blocks
           if (placed > 0 && placed % 25 === 0) {
             await bot.chat(`Building... ${placed}/${totalBlocks} blocks placed`);
           }
